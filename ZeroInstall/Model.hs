@@ -4,7 +4,7 @@ type Interface = String
 type BindingName = String
 type CommandName = Maybe String
 
-data Command = Command Interface (Maybe String)
+data Command = Command Interface CommandName
 	deriving Show
 
 data Binding = Binding BindingName BindingValue
@@ -25,21 +25,25 @@ data EnvironmentValue = EnvValue String | EnvInsert String
 	deriving Show
 
 data Digest = Digest String String
+	deriving Show
 type Selections = [Selection]
 
 data SelectionImpl = ZISelectionImpl {
 		version :: Version,
-		digests :: Digest,
+		digest :: Digest,
 		requires :: [Requirement]
 	} | PackageSelectionImpl {
 		package :: String,
 		distributions :: String,
-		from_feed :: String,
+		fromFeed :: String,
 		versionString :: String
 	}
+	deriving Show
 
 data VersionPrefix = Pre | Post | RC
+	deriving Show
 data VersionComponent = VersionComponent Int | PrefixedVersionComponent VersionPrefix (Maybe Int)
+	deriving Show
 type Version = [VersionComponent]
 
 data Selection = Selection {
@@ -49,10 +53,13 @@ data Selection = Selection {
 		commands :: [Command],
 		selImpl :: SelectionImpl
 }
+	deriving Show
 
 data Importance = Recommended
+	deriving Show
 data Requirement = Requirement {
 	interface :: Interface,
 	bindings :: [Binding],
 	importance :: Maybe Importance
 }
+	deriving Show
