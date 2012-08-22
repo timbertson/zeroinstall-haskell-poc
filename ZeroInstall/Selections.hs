@@ -47,44 +47,64 @@ getSelection e = do
 	iface <- getAttr "interface" e
 	bindings <- return [] -- TODO
 	commands <- return []
-	impl <- getSelectionImpl e
+	let fromFeed = hush $ getAttr "from-feed" e
+	(version, impl) <- getSelectionImpl e
 	return Selection {
 		selId = id
+		,version = version
+		,requires = []
+		,fromFeed = fromFeed
 		,selInterface = iface
 		,selBindings = bindings
 		,commands = commands
 		,selImpl = impl
 	}
 
-getSelectionImpl :: Element -> Either String SelectionImpl
+getSelectionImpl :: Element -> Either String (AnyVersion, SelectionImpl)
 getSelectionImpl e =
-	case (getAttr "package" e) of
-		(Right p) -> getPackageImpl p
+	case ((getAttr "package" e), (getAttr "local-path" e)) of
+		(Right pkg, _) -> getPackageImpl pkg
+		(_, Right localPath) -> getLocalImpl localPath
 		_ -> getZiImpl
 	where
 		getPackageImpl p = do
 			dists <- getAttr "distributions" e
-			fromFeed <- getAttr "from_feed" e
-			version <- getAttr "version" e
-			return PackageSelectionImpl {
+			version <- versionText
+			return (Left version, PackageSelectionImpl {
 				package = p
 				,distributions = dists
-				,fromFeed = fromFeed
-				,versionString = version
-			}
+			})
+
+		versionText = getAttr "version" e
+		ziVersion = versionText >>= return . Right . parseVersion
+
+		getLocalImpl localPath = do
+			version <- ziVersion
+			return (version, LocalSelectionImpl {
+				localPath = localPath
+			})
 
 		getZiImpl = do
-			version <- liftM parseVersion $ getAttr "version" e
-			digest <- liftM parseDigest $ getAttr "digest" e
-			requires <- return []
-			return ZISelectionImpl {
-				version = version
-				,digest = digest
-				,requires = requires
-			}
+			digests <- getChild "manifest-digest" e >>= parseDigests
+			version <- ziVersion
+			return (version, SelectionImpl {
+				digests = digests
+			})
+
+nonEmpty :: String -> [a] -> Either String [a]
+nonEmpty err [] = Left err
+nonEmpty _ val = Right val
 
 parseVersion s = [VersionComponent 1, VersionComponent 0]
-parseDigest s = Digest "sha256" "1234abcd"
+parseDigests :: Element -> Either String [Digest]
+parseDigests e = nonEmpty "No manifest-digests found" (map toManifest $ elAttribs e)
+	where
+		toManifest attr = Digest (qName (attrKey attr)) (attrVal attr)
+
+getChild :: String -> Element -> Either String Element
+getChild name parent = note errorMessage $ findChild (ziName name) parent
+	where
+		errorMessage = "Missing \"" ++ name ++ "\" tag in \"" ++ (tagName parent) ++ "\"" ++ (describeLine parent)
 
 getAttr :: String -> Element -> Either String String
 getAttr = getAttrNs Nothing
@@ -101,7 +121,6 @@ getAttrNs uri name elem = note errorMessage $ findAttr qname elem
 			"Missing \"" ++ name ++
 			"\" attribute in \""++ (tagName elem) ++
 			"\" tag" ++ (describeLine elem)
-		reportMissing (Just x) = return x
 
 describeLine elem = fromMaybe "" $ liftM describeLine' (elLine elem)
 describeLine' num = " (line " ++ (show num) ++ ")"

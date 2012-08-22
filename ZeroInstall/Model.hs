@@ -28,29 +28,34 @@ data Digest = Digest String String
 	deriving Show
 type Selections = [Selection]
 
-data SelectionImpl = ZISelectionImpl {
-		version :: Version,
-		digest :: Digest,
-		requires :: [Requirement]
+data SelectionImpl =
+	SelectionImpl {
+		digests :: [Digest]
+	} | LocalSelectionImpl {
+		localPath :: String
 	} | PackageSelectionImpl {
 		package :: String,
-		distributions :: String,
-		fromFeed :: String,
-		versionString :: String
+		distributions :: String
 	}
-	deriving Show
+		deriving Show
+
+-- TODO: awkward!
 
 data VersionPrefix = Pre | Post | RC
 	deriving Show
 data VersionComponent = VersionComponent Int | PrefixedVersionComponent VersionPrefix (Maybe Int)
 	deriving Show
 type Version = [VersionComponent]
+type AnyVersion = Either String Version
 
 data Selection = Selection {
 		selId :: String,
 		selInterface :: Interface,
 		selBindings :: [Binding],
 		commands :: [Command],
+		version :: Either String Version,
+		fromFeed :: Maybe Interface,
+		requires :: [Requirement],
 		selImpl :: SelectionImpl
 }
 	deriving Show
