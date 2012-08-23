@@ -21,7 +21,7 @@ getCommand e = do
 	let c = hush $ getAttr "command" e
 	return $ Command i c
 
-getSelections :: Element -> Either String [Selection]
+getSelections :: Element -> Either String Selections
 getSelections e = mapM getSelection' (X.findChildren selectionTag  e)
 	where
 		getSelection' e = assertElemName selectionTag e >>= getSelection
@@ -48,19 +48,18 @@ getSelection e = do
 	bindings <- return [] -- TODO
 	commands <- return []
 	let fromFeed = hush $ getAttr "from-feed" e
-	(version, impl) <- getSelectionImpl e
-	return Selection {
-		selId = id
-		,version = version
+	impl <- getSelectionImpl e
+	return Implementation {
+		implId = id
 		,requires = []
 		,fromFeed = fromFeed
-		,selInterface = iface
-		,selBindings = bindings
+		,interface = iface
+		,bindings = bindings
 		,commands = commands
-		,selImpl = impl
+		,implDetails = impl
 	}
 
-getSelectionImpl :: Element -> Either String (AnyVersion, SelectionImpl)
+getSelectionImpl :: Element -> Either String ImplementationDetails
 getSelectionImpl e =
 	case ((getAttr "package" e), (getAttr "local-path" e)) of
 		(Right pkg, _) -> getPackageImpl pkg
@@ -70,26 +69,23 @@ getSelectionImpl e =
 		getPackageImpl p = do
 			dists <- getAttr "distributions" e
 			version <- versionText
-			return (Left version, PackageSelectionImpl {
-				package = p
-				,distributions = dists
-			})
+			return $ Package $ PackageImplementation {
+				packageName = p
+				,packageVersion = version
+				,distributions = words dists
+			}
 
 		versionText = getAttr "version" e
-		ziVersion = versionText >>= return . Right . parseVersion
+		ziVersion = versionText >>= return . parseVersion
 
 		getLocalImpl localPath = do
 			version <- ziVersion
-			return (version, LocalSelectionImpl {
-				localPath = localPath
-			})
+			return $ Local $ LocalImplementation version localPath
 
 		getZiImpl = do
 			digests <- getChild "manifest-digest" e >>= parseDigests
 			version <- ziVersion
-			return (version, SelectionImpl {
-				digests = digests
-			})
+			return $ Remote $ RemoteImplementation version digests
 
 nonEmpty :: String -> [a] -> Either String [a]
 nonEmpty err [] = Left err

@@ -27,19 +27,46 @@ data EnvironmentValue = EnvValue String | EnvInsert String
 data Digest = Digest String String
 	deriving Show
 type Selections = [Selection]
+type Selection = Implementation
 
-data SelectionImpl =
-	SelectionImpl {
-		digests :: [Digest]
-	} | LocalSelectionImpl {
-		localPath :: String
-	} | PackageSelectionImpl {
-		package :: String,
-		distributions :: String
+data Implementation = Implementation {
+	implId :: String,
+	interface :: Interface,
+	bindings :: [Binding],
+	commands :: [Command],
+	fromFeed :: Maybe Interface,
+	implDetails :: ImplementationDetails,
+	requires :: [Requirement]
+} deriving Show
+
+data ImplementationDetails = Local LocalImplementation | Package PackageImplementation | Remote RemoteImplementation
+	deriving Show
+
+data RemoteImplementation = RemoteImplementation Version [Digest]
+	deriving Show
+
+data LocalImplementation = LocalImplementation Version FilePath
+	deriving Show
+
+data PackageImplementation = PackageImplementation {
+		packageName :: String,
+		packageVersion :: String,
+		distributions :: [String]
 	}
-		deriving Show
+	deriving Show
 
--- TODO: awkward!
+instance HasVersionString RemoteImplementation where versionString (RemoteImplementation v _) = show v
+instance HasVersionString LocalImplementation where versionString (LocalImplementation v _) = show v
+instance HasVersionString PackageImplementation where versionString = packageVersion
+
+instance HasVersion RemoteImplementation where version (RemoteImplementation v _) = v
+instance HasVersion LocalImplementation where version (LocalImplementation v _) = v
+
+class HasVersionString impl where
+	versionString :: impl -> String
+
+class HasVersion impl where
+	version :: impl -> Version
 
 data VersionPrefix = Pre | Post | RC
 	deriving Show
@@ -48,23 +75,7 @@ data VersionComponent = VersionComponent Int | PrefixedVersionComponent VersionP
 type Version = [VersionComponent]
 type AnyVersion = Either String Version
 
-data Selection = Selection {
-		selId :: String,
-		selInterface :: Interface,
-		selBindings :: [Binding],
-		commands :: [Command],
-		version :: Either String Version,
-		fromFeed :: Maybe Interface,
-		requires :: [Requirement],
-		selImpl :: SelectionImpl
-}
-	deriving Show
-
 data Importance = Recommended
 	deriving Show
-data Requirement = Requirement {
-	interface :: Interface,
-	bindings :: [Binding],
-	importance :: Maybe Importance
-}
+data Requirement = Requirement Interface [Binding] (Maybe Importance)
 	deriving Show
