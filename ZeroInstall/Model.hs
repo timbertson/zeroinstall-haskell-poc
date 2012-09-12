@@ -1,43 +1,76 @@
 module ZeroInstall.Model where
 
+import qualified Data.Text as T
+
 type Interface = String
 type BindingName = String
 type CommandName = Maybe String
+type LocalPath = [String]
+type Separator = String
 
-data Command = Command Interface CommandName
-	deriving Show
+splitPath = (map T.unpack) . (T.split (== '/')) . T.pack
+
+data RunSpecification = RunSpecification Interface CommandName
+
+data Command = Command {
+	commandBindings :: [Binding],
+	commandRequirements :: [Requirement],
+	commandName :: CommandName
+	} deriving Show
+
+class ImplementationExports a where
+	bindings :: a -> [Binding]
+	requirements :: a -> [Requirement]
+
+instance ImplementationExports Command where
+	bindings = commandBindings
+	requirements = commandRequirements
 
 data Binding = Binding BindingName BindingValue
 	deriving Show
 
 data BindingValue =
-	EnvironmentBinding BindingAlg EnvironmentValue
+	EnvironmentBinding BindingAlg EnvironmentValue (Maybe Separator)
 	| ExecutableInPath Command
 	deriving Show
 
 data BindingMode = Prepend | Append
 	deriving Show
 
-data BindingAlg = Replace | AddToExisting String BindingMode
+data BindingAlg = Replace | AddToExisting BindingMode
 	deriving Show
+
+lookupBindingAlg :: String -> Either String BindingAlg
+lookupBindingAlg "prepend" = Right $ AddToExisting Prepend
+lookupBindingAlg "append"  = Right $ AddToExisting Append
+lookupBindingAlg "replace" = Right $ Replace
+lookupBindingAlg unknown   = Left  $ "No such binding mode: " ++ unknown
+
+defaultBindingAlg = AddToExisting Append
 
 data EnvironmentValue = EnvValue String | EnvInsert String
 	deriving Show
 
 data Digest = Digest String String
 	deriving Show
-type Selections = [Selection]
+data Selections = Selections Interface CommandName [Selection]
 type Selection = Implementation
+getCommand :: Selections -> CommandName
+getCommand (Selections _ c _) = c
 
 data Implementation = Implementation {
 	implId :: String,
 	interface :: Interface,
-	bindings :: [Binding],
+	implBindings :: [Binding],
 	commands :: [Command],
 	fromFeed :: Maybe Interface,
 	implDetails :: ImplementationDetails,
-	requires :: [Requirement]
+	implRequirements :: [Requirement]
 } deriving Show
+
+instance ImplementationExports Implementation where
+	bindings = implBindings
+	requirements = implRequirements
 
 data ImplementationDetails = Local LocalImplementation | Package PackageImplementation | Remote RemoteImplementation
 	deriving Show

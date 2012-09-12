@@ -1,8 +1,8 @@
-module Selections where
+module ZeroInstall.Selections where
 
 import ZeroInstall.Model
 
-import Data.List (partition)
+import Data.List (partition, intercalate)
 import Text.XML.Light as X
 import Control.Error
 import Control.Monad (liftM)
@@ -15,14 +15,12 @@ loadXml filename = do
 parseXml :: String -> Either String Element
 parseXml str = note "Invalid XML" (X.parseXMLDoc str)
 
-getCommand :: Element -> Either String Command
-getCommand e = do
-	i <- getAttr "interface" e
-	let c = hush $ getAttr "command" e
-	return $ Command i c
-
 getSelections :: Element -> Either String Selections
-getSelections e = mapM getSelection' (X.findChildren selectionTag  e)
+getSelections e = do
+	selections <- mapM getSelection' (X.findChildren selectionTag  e)
+	interface <- getAttr "interface" e
+	let commandName = hush $ getAttr "command" e
+	return $ Selections interface commandName selections
 	where
 		getSelection' e = assertElemName selectionTag e >>= getSelection
 		selectionTag = ziName "selection"
@@ -41,20 +39,66 @@ assertElemName name elem =
 partitionChildren :: (Element -> Bool) -> Element -> ([Element], [Element])
 partitionChildren predicate e = partition predicate (X.elChildren e)
 
+getBindings :: Element -> Either String [Binding]
+getBindings e = collectRight $ envBindings ++ executableBindings where
+	envBindings = map parseEnvironmentBinding $ children "environment"
+	executableBindings = map parseExecutableBinding $ children "executable-in-path"
+	children tagName = X.findChildren (ziName tagName) e
+
+-- return the first `Left` if there were any lefts, else return the list of all rights
+collectRight :: [Either a b] -> Either a [b]
+collectRight eithers = (headMay lefts) `toLeft` rights
+	where
+		(lefts, rights) = partitionEithers eithers
+
+toLeft Nothing r = Right r
+toLeft (Just x) _ = Left x
+
+toRight Nothing left = Left left
+toRight (Just x) _ = Right x
+
+getOneAttribute :: [(String, String -> a)] -> Element -> Either String a
+getOneAttribute specs elem =
+	case extracted of
+		[match] -> Right $ snd match
+		[] -> Left $ "Missing one of " ++ (descAttrs specs) ++ " attributes" ++ (describeLine elem)
+		attrs -> Left $ "Only one of " ++ (descAttrs attrs) ++ " attributes allowed" ++ (describeLine elem)
+	where
+		extracted = catMaybes $ map extract specs
+		extract :: (String, String -> a) -> Maybe (String,  a)
+		extract (name, proc) = liftM (\val -> (name, proc val)) $ hush (getAttr name elem)
+		descAttrs pairs = intercalate ", " $ map (quote . fst) pairs
+
+quote t = "\"" ++ t ++ "\""
+
+parseEnvironmentBinding :: Element -> Either String Binding
+parseEnvironmentBinding elem = do
+	name <- getAttr "name" elem
+	alg <- maybe (Right defaultBindingAlg) lookupBindingAlg $ hush (getAttr "mode" elem)
+	liftM (makeBinding name alg) $ getOneAttribute [
+		("value", EnvValue),
+		("insert", EnvInsert)] elem
+	where
+		makeBinding :: String -> BindingAlg -> EnvironmentValue -> Binding
+		makeBinding name alg val = Binding name (EnvironmentBinding alg val sep)
+		sep = hush $ (getAttr "separator" elem)
+
+parseExecutableBinding elem = fail "Not implemented: parseExecutableBinding"
+
 getSelection :: Element -> Either String Selection
 getSelection e = do
 	id <- getAttr "id" e
 	iface <- getAttr "interface" e
 	bindings <- return [] -- TODO
-	commands <- return []
+	commands <- return [] -- TODO
 	let fromFeed = hush $ getAttr "from-feed" e
 	impl <- getSelectionImpl e
 	return Implementation {
 		implId = id
-		,requires = []
+		,implRequirements = []
 		,fromFeed = fromFeed
 		,interface = iface
-		,bindings = bindings
+		,implBindings = bindings
 		,commands = commands
 		,implDetails = impl
 	}
