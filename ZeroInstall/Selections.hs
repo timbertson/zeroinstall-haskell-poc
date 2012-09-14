@@ -89,7 +89,7 @@ getSelection :: Element -> Either String Selection
 getSelection e = do
 	id <- getAttr "id" e
 	iface <- getAttr "interface" e
-	bindings <- return [] -- TODO
+	bindings <- getBindings e
 	commands <- return [] -- TODO
 	let fromFeed = hush $ getAttr "from-feed" e
 	impl <- getSelectionImpl e

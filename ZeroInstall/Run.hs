@@ -56,7 +56,8 @@ applyBindingAlg (AddToExisting mode) new sep existing =
 
 runSelections :: Selections -> IO ()
 runSelections (Selections iface selectedCommand sels) = do
-	sel <- getMaybe ("missing \"interface\" on selections") $ find ((== iface) . interface) sels
+	let maybeSel = find ((== iface) . interface) sels
+	selection <- requireJust ("cannot find interface " ++ iface ++ " in selections") maybeSel
 	let command = selectedCommand >>= \_ -> find ((== selectedCommand) . commandName) (commands sel)
 	putStrLn $ "num bundings: " ++ (show $ liftM (length . bindings) sels)
 	mapM_ applySelectionBindings sels
@@ -64,8 +65,8 @@ runSelections (Selections iface selectedCommand sels) = do
 	where
 		applySelectionBindings selection = mapM_ (doEnvBinding (Just "/tmp/TODO")) (bindings selection)
 
-getMaybe :: String -> Maybe a -> IO a
-getMaybe message m = maybe (fail message) return m
+requireJust :: String -> Maybe a -> IO a
+requireJust message m = maybe (fail message) return m
 
 main = do
 	xml <- Selections.loadXml "sels.xml"

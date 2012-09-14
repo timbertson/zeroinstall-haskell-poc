@@ -1,6 +1,7 @@
 module ZeroInstall.Model where
 
 import qualified Data.Text as T
+import Data.List (intercalate)
 
 type Interface = String
 type BindingName = String
@@ -53,6 +54,21 @@ data EnvironmentValue = EnvValue String | EnvInsert String
 
 data Digest = Digest String String
 	deriving Show
+
+parseDigest :: String -> Either String Digest
+parseDigest str =
+	if (any null [alg, val])
+		then Left $ "Invalid digest format: " ++ str
+		else Right $ Digest alg val
+	where
+		(alg, val) = (break (`elem` ['=','_']) str)
+
+formatDigest :: Digest -> String
+formatDigest (Digest alg val) = intercalate sep [alg, val]
+	where
+		sep | alg `elem` ["sha1", "sha1new", "sha256"] = "="
+		    | otherwise                                = "_"
+
 data Selections = Selections Interface CommandName [Selection]
 type Selection = Implementation
 getCommand :: Selections -> CommandName
@@ -112,3 +128,4 @@ data Importance = Recommended
 	deriving Show
 data Requirement = Requirement Interface [Binding] (Maybe Importance)
 	deriving Show
+
