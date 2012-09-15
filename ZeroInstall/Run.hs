@@ -5,9 +5,11 @@ import System.Posix.Env (getEnv,setEnv)
 import System.Cmd (rawSystem)
 import System.FilePath (joinPath)
 import Control.Monad (liftM)
+import Control.Error (hush)
 import Data.List (intercalate, find)
 import Data.Maybe (maybeToList)
 import ZeroInstall.Model
+import ZeroInstall.Store (Store, getStores, lookupAny)
 import qualified ZeroInstall.Selections as Selections
 
 debug :: String -> IO ()
@@ -58,12 +60,25 @@ runSelections :: Selections -> IO ()
 runSelections (Selections iface selectedCommand sels) = do
 	let maybeSel = find ((== iface) . interface) sels
 	selection <- requireJust ("cannot find interface " ++ iface ++ " in selections") maybeSel
-	let command = selectedCommand >>= \_ -> find ((== selectedCommand) . commandName) (commands sel)
+	let command = selectedCommand >>= \_ -> find ((== selectedCommand) . commandName) (commands selection)
 	putStrLn $ "num bundings: " ++ (show $ liftM (length . bindings) sels)
-	mapM_ applySelectionBindings sels
+	annotated <- annotateSelectionPaths sels
+	mapM_ applySelectionBindings annotated
 	return ()
 	where
-		applySelectionBindings selection = mapM_ (doEnvBinding (Just "/tmp/TODO")) (bindings selection)
+		applySelectionBindings (selection, path) = mapM_ (doEnvBinding path) (bindings selection)
+
+annotateSelectionPaths :: [Selection] -> IO [(Selection, Maybe FilePath)]
+annotateSelectionPaths sels = do
+	stores <- getStores
+	paths <- mapM ((lookupImpl stores) . implDetails) sels
+	return $ sels `zip` paths
+	where
+		lookupImpl :: [Store] -> ImplementationDetails -> IO (Maybe FilePath)
+		lookupImpl stores (Local (LocalImplementation version path)) = return $ Just path
+		lookupImpl stores (Remote (RemoteImplementation version digests)) = liftM hush $ lookupAny stores digests
+		lookupImpl stores (Package _) = return Nothing
+
 
 requireJust :: String -> Maybe a -> IO a
 requireJust message m = maybe (fail message) return m

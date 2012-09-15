@@ -2,6 +2,7 @@ module ZeroInstall.Selections where
 
 import ZeroInstall.Model
 
+import ZeroInstall.Utils (collectRight)
 import Data.List (partition, intercalate)
 import Text.XML.Light as X
 import Control.Error
@@ -25,10 +26,6 @@ getSelections e = do
 		getSelection' e = assertElemName selectionTag e >>= getSelection
 		selectionTag = ziName "selection"
 
-mapLeft :: (a1 -> a2) -> Either a1 b -> Either a2 b
-mapLeft f (Left a) = Left (f a)
-mapLeft f (Right b) = Right b
-
 assertElemName :: QName -> Element -> Either String Element
 assertElemName name elem =
 	if (name == elName elem)
@@ -44,18 +41,6 @@ getBindings e = collectRight $ envBindings ++ executableBindings where
 	envBindings = map parseEnvironmentBinding $ children "environment"
 	executableBindings = map parseExecutableBinding $ children "executable-in-path"
 	children tagName = X.findChildren (ziName tagName) e
-
--- return the first `Left` if there were any lefts, else return the list of all rights
-collectRight :: [Either a b] -> Either a [b]
-collectRight eithers = (headMay lefts) `toLeft` rights
-	where
-		(lefts, rights) = partitionEithers eithers
-
-toLeft Nothing r = Right r
-toLeft (Just x) _ = Left x
-
-toRight Nothing left = Left left
-toRight (Just x) _ = Right x
 
 getOneAttribute :: [(String, String -> a)] -> Element -> Either String a
 getOneAttribute specs elem =
