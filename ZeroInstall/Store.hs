@@ -1,7 +1,6 @@
 module ZeroInstall.Store where
 
 import Prelude hiding (lookup)
-import qualified System.Posix.User as User
 import qualified System.Environment.XDG.BaseDir as Basedir
 import System.Directory (doesDirectoryExist)
 import System.FilePath (joinPath)
@@ -21,12 +20,20 @@ getStores = do
 firstDefined :: [Maybe a] -> Maybe a
 firstDefined = headMay . catMaybes
 
+bulletList :: [String] -> String
+bulletList items = (concat $ map ("\n - " ++) items)
+
 lookupAny :: [Store] -> [Digest] -> IO (Either String FilePath)
 lookupAny stores digests = liftM (note errorMessage) found where
 	found = liftM firstDefined $ mapM (lookup stores) digests
 	errorMessage =
 		("Couldn't locate any of the following digests: " ++
-			(concat $ (map $ ("\n - " ++) . formatDigest) digests))
+			(bulletList $ map formatDigest digests) ++
+			"\nIn the following implementation stores:" ++
+			(bulletList $ map getPath stores)
+		)
+
+getPath (Store path) = path
 
 lookup :: [Store] -> Digest -> IO (Maybe FilePath)
 lookup stores digest = liftM firstDefined $ mapM (flip lookup' $ digest) stores where
@@ -37,12 +44,9 @@ existingDirectory :: FilePath -> IO (Maybe FilePath)
 existingDirectory p = doesDirectoryExist p >>=
 	\exists -> return $ if exists then Just p else Nothing
 
-userStoreDir = do
-	user <- User.getEffectiveUserName
-	cacheDir <- Basedir.getUserCacheDir user
-	return (implDir cacheDir)
+userStoreDir = Basedir.getUserCacheDir cachePath
 
 systemStoreDirs = do
-	return [implDir "/var/cache"]
+	return $ [joinPath ["/var/cache", cachePath]]
 
-implDir base = joinPath [base, "0install.net", "implementations"]
+cachePath = joinPath ["0install.net", "implementations"]

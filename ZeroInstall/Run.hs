@@ -5,10 +5,13 @@ import System.Posix.Env (getEnv,setEnv)
 import System.Cmd (rawSystem)
 import System.FilePath (joinPath)
 import Control.Monad (liftM)
-import Control.Error (hush)
+import Control.Monad.Trans.Either
+import Control.Monad.Trans.Class
+import Control.Error (hush, liftEither, fmapL)
 import Data.List (intercalate, find)
 import Data.Maybe (maybeToList)
 import ZeroInstall.Model
+import ZeroInstall.Utils
 import ZeroInstall.Store (Store, getStores, lookupAny)
 import qualified ZeroInstall.Selections as Selections
 
@@ -26,7 +29,7 @@ doEnvBinding path binding = do
 resolveEnvBinding :: Binding -> Maybe FilePath -> IO (Maybe (String, String))
 resolveEnvBinding (Binding name bindingValue) maybePath =
 	case maybePath of
-		Nothing -> debug ("not setting " ++ name ++ " as we selected a package implementation") >> (return Nothing)
+		Nothing -> debug ("not setting " ++ name ++ " (as we selected a package implementation)") >> (return Nothing)
 		Just path -> do
 			existingVal <- getEnv name
 			return $ Just (name, getNewValue bindingValue existingVal path)
@@ -62,26 +65,36 @@ runSelections (Selections iface selectedCommand sels) = do
 	selection <- requireJust ("cannot find interface " ++ iface ++ " in selections") maybeSel
 	let command = selectedCommand >>= \_ -> find ((== selectedCommand) . commandName) (commands selection)
 	putStrLn $ "num bundings: " ++ (show $ liftM (length . bindings) sels)
-	annotated <- annotateSelectionPaths sels
+	annotated <- runEitherT (annotateSelectionPaths sels) >>= requireRight
 	mapM_ applySelectionBindings annotated
+	print command
 	return ()
 	where
 		applySelectionBindings (selection, path) = mapM_ (doEnvBinding path) (bindings selection)
 
-annotateSelectionPaths :: [Selection] -> IO [(Selection, Maybe FilePath)]
+annotateSelectionPaths :: [Selection] -> EitherT String IO [(Selection, Maybe FilePath)]
 annotateSelectionPaths sels = do
-	stores <- getStores
-	paths <- mapM ((lookupImpl stores) . implDetails) sels
+	stores <- lift getStores
+	paths <- lookupImpls stores sels
 	return $ sels `zip` paths
 	where
-		lookupImpl :: [Store] -> ImplementationDetails -> IO (Maybe FilePath)
-		lookupImpl stores (Local (LocalImplementation version path)) = return $ Just path
-		lookupImpl stores (Remote (RemoteImplementation version digests)) = liftM hush $ lookupAny stores digests
-		lookupImpl stores (Package _) = return Nothing
+		lookupImpls :: [Store] -> [Selection] -> EitherT String IO [Maybe FilePath]
+		lookupImpls stores sels = mapM (EitherT . (lookupImpl stores)) sels
 
+		lookupImpl :: [Store] -> Selection -> IO (Either String (Maybe FilePath))
+		lookupImpl stores sel = liftM (prependErrorMessage ("Unable to resolve interface " ++ (interface sel) ++ ":\n"))
+			(lookupImpl' stores (implDetails sel))
+
+		lookupImpl' :: [Store] -> ImplementationDetails -> IO (Either String (Maybe FilePath))
+		lookupImpl' stores (Local (LocalImplementation _ path))      = return $ Right $ Just path
+		lookupImpl' stores (Remote (RemoteImplementation _ digests)) = (liftM . liftM) Just $ lookupAny stores digests
+		lookupImpl' stores (Package _)                               = return (Right Nothing)
 
 requireJust :: String -> Maybe a -> IO a
 requireJust message m = maybe (fail message) return m
+
+requireRight :: Either String a -> IO a
+requireRight e = either fail return e
 
 main = do
 	xml <- Selections.loadXml "sels.xml"
