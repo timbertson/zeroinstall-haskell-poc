@@ -61,16 +61,42 @@ applyBindingAlg (AddToExisting mode) new sep existing =
 
 runSelections :: Selections -> IO ()
 runSelections (Selections iface selectedCommand sels) = do
-	let maybeSel = find ((== iface) . interface) sels
-	selection <- requireJust ("cannot find interface " ++ iface ++ " in selections") maybeSel
-	let command = selectedCommand >>= \_ -> find ((== selectedCommand) . commandName) (commands selection)
+	selection <-
+		requireJust ("cannot find interface " ++ iface ++ " in selections") $
+		find ((== iface) . interface) sels
+	print selection
+	print (commands selection)
+	print selectedCommand
+	command <-
+		requireJust ("cannot find \"" ++ selectedCommand ++ "\" command for interface " ++ iface) $
+		find ((== selectedCommand) . commandName) (commands selection)
 	putStrLn $ "num bundings: " ++ (show $ liftM (length . bindings) sels)
 	annotated <- runEitherT (annotateSelectionPaths sels) >>= requireRight
 	mapM_ applySelectionBindings annotated
 	print command
 	return ()
 	where
-		applySelectionBindings (selection, path) = mapM_ (doEnvBinding path) (bindings selection)
+		applySelectionBindings (selection, path) = mapM_ (doEnvBinding path) $ (bindings selection)
+
+-- applyBindings :: ([Interface, Maybe FilePath]) -> [ImplementationExports] -> IO ()
+-- applyBindings' :: Selection
+
+getAllBindings :: [Selection] -> [(Interface, Binding)]
+getAllBindings sels = concat $ map selectionBindings sels  where
+	selectionBindings sel = (collectBindings sel) ++ (collectRequirementBindings sel) ++ (collectCommandBindings sel)
+
+	assoc iface bindings = map ((,) iface) bindings
+
+	collectBindings :: (HasInterface a, HasBindings a) => a -> [(Interface, Binding)]
+	collectBindings container = assoc (interface container) (bindings container)
+
+	collectRequirementBindings :: Selection -> [(Interface, Binding)]
+	collectRequirementBindings container = concat $ map collectBindings (requirements container)
+
+	collectCommandBindings :: Selection -> [(Interface, Binding)]
+	collectCommandBindings sel = concat $ map (\c -> assoc (interface sel) (bindings c)) (commands sel)
+	--TODO: do all commands appear in a sels document? or just the ones we have selected?
+
 
 annotateSelectionPaths :: [Selection] -> EitherT String IO [(Selection, Maybe FilePath)]
 annotateSelectionPaths sels = do

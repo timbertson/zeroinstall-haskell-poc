@@ -5,13 +5,13 @@ import Data.List (intercalate)
 
 type Interface = String
 type BindingName = String
-type CommandName = Maybe String
+type CommandName = String
 type LocalPath = [String]
 type Separator = String
 
 splitPath = (map T.unpack) . (T.split (== '/')) . T.pack
 
-data RunSpecification = RunSpecification Interface CommandName
+data RunSpecification = RunSpecification Interface (Maybe CommandName)
 
 data Command = Command {
 	commandBindings :: [Binding],
@@ -19,12 +19,16 @@ data Command = Command {
 	commandName :: CommandName
 	} deriving Show
 
-class ImplementationExports a where
+class HasBindings a where
 	bindings :: a -> [Binding]
+
+class HasRequirements a where
 	requirements :: a -> [Requirement]
 
-instance ImplementationExports Command where
+instance HasBindings Command where
 	bindings = commandBindings
+
+instance HasRequirements Command where
 	requirements = commandRequirements
 
 data Binding = Binding BindingName BindingValue
@@ -76,7 +80,7 @@ getCommand (Selections _ c _) = c
 
 data Implementation = Implementation {
 	implId :: String,
-	interface :: Interface,
+	implInterface :: Interface,
 	implBindings :: [Binding],
 	commands :: [Command],
 	fromFeed :: Maybe Interface,
@@ -84,9 +88,17 @@ data Implementation = Implementation {
 	implRequirements :: [Requirement]
 } deriving Show
 
-instance ImplementationExports Implementation where
+instance HasBindings Implementation where
 	bindings = implBindings
+
+instance HasRequirements Implementation where
 	requirements = implRequirements
+
+class HasInterface a where
+	interface :: a -> Interface
+
+instance HasInterface Implementation where
+	interface = implInterface
 
 data ImplementationDetails = Local LocalImplementation | Package PackageImplementation | Remote RemoteImplementation
 	deriving Show
@@ -124,8 +136,19 @@ data VersionComponent = VersionComponent Int | PrefixedVersionComponent VersionP
 type Version = [VersionComponent]
 type AnyVersion = Either String Version
 
-data Importance = Recommended
+data Importance = Required | Recommended
 	deriving Show
 data Requirement = Requirement Interface [Binding] (Maybe Importance)
 	deriving Show
+
+instance HasBindings Requirement where
+	bindings (Requirement _ b _) = b
+
+instance HasInterface Requirement where
+	interface (Requirement iface _ _) = iface
+
+parseImportance :: String -> Either String Importance
+parseImportance "required"    = Right Required
+parseImportance "recommended" = Right Recommended
+parseImportance x             = Left $ "Unknown importance: " ++ x
 

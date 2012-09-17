@@ -20,7 +20,7 @@ getSelections :: Element -> Either String Selections
 getSelections e = do
 	selections <- mapM getSelection' (X.findChildren selectionTag  e)
 	interface <- getAttr "interface" e
-	let commandName = hush $ getAttr "command" e
+	commandName <- getAttr "command" e
 	return $ Selections interface commandName selections
 	where
 		getSelection' e = assertElemName selectionTag e >>= getSelection
@@ -75,18 +75,42 @@ getSelection e = do
 	id <- getAttr "id" e
 	iface <- getAttr "interface" e
 	bindings <- getBindings e
-	commands <- return [] -- TODO
+	commands <- getCommands e
 	let fromFeed = hush $ getAttr "from-feed" e
 	impl <- getSelectionImpl e
 	return Implementation {
 		implId = id
-		,implRequirements = []
+		,implRequirements = [] -- TODO
 		,fromFeed = fromFeed
-		,interface = iface
+		,implInterface = iface
 		,implBindings = bindings
 		,commands = commands
 		,implDetails = impl
 	}
+
+transformChildren :: (Element -> Either String a) -> String -> Element -> Either String [a]
+transformChildren transform name e = collectRight $ map transform (X.findChildren (ziName name) e)
+
+getRequirements = transformChildren getRequirement "requires" where
+	getRequirement :: Element -> Either String Requirement
+	getRequirement e = do
+		-- TODO: version restrictions
+		iface <- getAttr "interface" e
+		let maybeImportance = liftM parseImportance (hush $ getAttr "importance" e)
+		importance <- maybe (Right Nothing) (liftM Just) maybeImportance
+		bindings <- getBindings e
+		return $ Requirement iface bindings importance
+
+getCommands = transformChildren getCommand "command" where
+	getCommand :: Element -> Either String Command
+	getCommand e = do
+		name <- getAttr "name" e
+		bindings <- getBindings e
+		return Command {
+			commandName = name
+			,commandRequirements = [] -- TODO
+			,commandBindings = bindings
+		}
 
 getSelectionImpl :: Element -> Either String ImplementationDetails
 getSelectionImpl e =

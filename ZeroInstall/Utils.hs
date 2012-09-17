@@ -1,6 +1,6 @@
 module ZeroInstall.Utils where
 
-import Control.Error (headMay, partitionEithers)
+import Control.Error (headMay, partitionEithers, fmapL)
 
 mapLeft :: (a1 -> a2) -> Either a1 b -> Either a2 b
 mapLeft f (Left a) = Left (f a)
