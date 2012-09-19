@@ -1,15 +1,19 @@
 #!/usr/bin/env runghc
+{-# LANGUAGE ScopedTypeVariables #-}
 module Main where
 
 import System.Posix.Env (getEnv,setEnv)
 import System.Cmd (rawSystem)
+import Debug.Trace
 import System.FilePath (joinPath)
 import Control.Monad (liftM)
 import Control.Monad.Trans.Either
 import Control.Monad.Trans.Class
 import Control.Error (hush, liftEither, fmapL)
 import Data.List (intercalate, find)
-import Data.Maybe (maybeToList)
+import Data.Maybe (maybeToList, catMaybes)
+import qualified Data.Map as Map
+import Data.Map ((!))
 import ZeroInstall.Model
 import ZeroInstall.Utils
 import ZeroInstall.Store (Store, getStores, lookupAny)
@@ -17,27 +21,6 @@ import qualified ZeroInstall.Selections as Selections
 
 debug :: String -> IO ()
 debug = putStrLn
-
-doEnvBinding :: Maybe FilePath -> Binding -> IO ()
-doEnvBinding path binding = do
-	putStrLn (show binding)
-	resolveEnvBinding binding path >>= update
-	where
-		update (Just (name, val)) = putStrLn ("setting $" ++ name ++ "=" ++ val) >> setEnv name val True
-		update Nothing = return ()
-
-resolveEnvBinding :: Binding -> Maybe FilePath -> IO (Maybe (String, String))
-resolveEnvBinding (Binding name bindingValue) maybePath =
-	case maybePath of
-		Nothing -> debug ("not setting " ++ name ++ " (as we selected a package implementation)") >> (return Nothing)
-		Just path -> do
-			existingVal <- getEnv name
-			return $ Just (name, getNewValue bindingValue existingVal path)
-	where
-		getNewValue :: BindingValue -> Maybe String -> FilePath -> String
-		getNewValue (EnvironmentBinding alg value sep) existingVal path =
-			applyBindingAlg alg expanded sep existingVal where
-				expanded = expandBindingVal value path
 
 defaultValue :: a -> Maybe a -> a
 defaultValue v Nothing = v
@@ -64,22 +47,42 @@ runSelections (Selections iface selectedCommand sels) = do
 	selection <-
 		requireJust ("cannot find interface " ++ iface ++ " in selections") $
 		find ((== iface) . interface) sels
-	print selection
-	print (commands selection)
-	print selectedCommand
+	-- print selection
+	-- print (commands selection)
+	-- print selectedCommand
 	command <-
 		requireJust ("cannot find \"" ++ selectedCommand ++ "\" command for interface " ++ iface) $
 		find ((== selectedCommand) . commandName) (commands selection)
-	putStrLn $ "num bundings: " ++ (show $ liftM (length . bindings) sels)
-	annotated <- runEitherT (annotateSelectionPaths sels) >>= requireRight
-	mapM_ applySelectionBindings annotated
+	-- putStrLn $ "num bundings: " ++ (show $ liftM (length . bindings) sels)
+	annotatedSelections :: [(Selection, Maybe FilePath)] <- runEitherT (annotateSelectionPaths sels) >>= requireRight
+	let allBindings = getAllBindings sels :: [(Interface, Binding)]
+	let applicableBindings = correlateBindings annotatedSelections allBindings :: [(FilePath, Binding)]
+	applyBindings applicableBindings
 	print command
 	return ()
-	where
-		applySelectionBindings (selection, path) = mapM_ (doEnvBinding path) $ (bindings selection)
 
--- applyBindings :: ([Interface, Maybe FilePath]) -> [ImplementationExports] -> IO ()
--- applyBindings' :: Selection
+correlateBindings :: [(Selection, Maybe FilePath)] -> [(Interface, Binding)] -> [(FilePath, Binding)]
+correlateBindings selectionPathPairs interfaceBindingPairs = catMaybes $ map resolveBinding interfaceBindingPairs where
+	selectionPaths :: Map.Map Interface (Maybe FilePath)
+	selectionPaths = Map.fromList $ map (\(sel, path) -> (interface sel, path)) selectionPathPairs
+	resolveBinding (iface, binding) = case (selectionPaths ! iface) of
+		(Just path) -> Just (path, binding)
+		Nothing -> trace ("Discarding binding for " ++ iface ++ " - package or optional implementation?") Nothing
+
+applyBindings = mapM_ applyBinding
+
+applyBinding :: (FilePath, Binding) -> IO ()
+applyBinding (path, (Binding name (EnvironmentBinding alg value sep))) = do
+		existingVal <- getEnv name
+		let val = getNewValue existingVal
+		putStrLn ("setting $" ++ name ++ "=" ++ val)
+		setEnv name val True
+	where
+		getNewValue :: Maybe String -> String
+		getNewValue existingVal =
+			applyBindingAlg alg expanded sep existingVal where
+				expanded = expandBindingVal value path
+--TODO: non-env bindings
 
 getAllBindings :: [Selection] -> [(Interface, Binding)]
 getAllBindings sels = concat $ map selectionBindings sels  where
