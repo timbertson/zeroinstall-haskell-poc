@@ -1,10 +1,14 @@
 module ZeroInstall.Utils where
 
+import Control.Monad (liftM)
 import Control.Error (headMay, partitionEithers, fmapL)
 
 mapLeft :: (a1 -> a2) -> Either a1 b -> Either a2 b
 mapLeft f (Left a) = Left (f a)
 mapLeft f (Right b) = Right b
+
+mapRight :: (b1 -> b2) -> Either a b1 -> Either a b2
+mapRight = liftM
 
 -- return the first `Left` if there were any lefts, else return the list of all rights
 collectRight :: [Either a b] -> Either a [b]

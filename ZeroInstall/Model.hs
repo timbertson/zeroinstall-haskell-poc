@@ -16,7 +16,15 @@ data RunSpecification = RunSpecification Interface (Maybe CommandName)
 data Command = Command {
 	commandBindings :: [Binding],
 	commandRequirements :: [Requirement],
-	commandName :: CommandName
+	commandName :: CommandName,
+	commandPath :: Maybe FilePath,
+	runner :: Maybe Runner
+	} deriving Show
+
+data Runner = Runner {
+	runnerInterface :: Interface,
+	runnerArgs :: [String],
+	runnerCommand :: Maybe CommandName
 	} deriving Show
 
 class HasBindings a where

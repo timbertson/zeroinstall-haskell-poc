@@ -106,11 +106,31 @@ getCommands = transformChildren getCommand "command" where
 	getCommand e = do
 		name <- getAttr "name" e
 		bindings <- getBindings e
+		let commandPath = hush $ getAttr "path" e
+		-- TODO: my brain hurts. surely this can be simplified?
+		runner <- maybe (Right Nothing) ((liftM Just) . getRunner) (hush $ getChild "runner" e)
 		return Command {
 			commandName = name
 			,commandRequirements = [] -- TODO
 			,commandBindings = bindings
+			,commandPath = commandPath
+			,runner = runner
 		}
+
+getRunner :: Element -> Either String Runner
+getRunner e = do
+	iface <- getAttr "interface" e
+	let commandName = hush $ getAttr "command" e
+	args <- getArgs e
+	return Runner {
+		runnerInterface = iface
+		,runnerArgs = args
+		,runnerCommand = commandName
+	}
+
+getArgs = transformChildren getArg "arg" where
+	getArg :: Element -> Either String String
+	getArg = Right . strContent
 
 getSelectionImpl :: Element -> Either String ImplementationDetails
 getSelectionImpl e =
