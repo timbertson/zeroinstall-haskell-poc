@@ -92,11 +92,10 @@ tokenize s = catMaybes $ parse s where
 	parseRef s = (Just $ EnvReference var) : (parse rest) where
 		(var, rest) = break (not . isAlpha) s
 
--- TODO:
--- expandTokens :: (Monad m) => (String -> m (Maybe String)) -> m String
-expandTokens getEnv = concatMap toString where
-	toString (Literal s) = s
-	toString (EnvReference v) = maybe "" id (getEnv v)
+expandTokens :: (Monad m) => (String -> m (Maybe String)) -> [Token] -> m String
+expandTokens getEnv toks = liftM concat (mapM toString toks) where
+	toString (Literal s) = return s
+	toString (EnvReference v) = liftM (maybe "" id) (getEnv v)
 
 expandCommandPath :: Maybe FilePath -> FilePath -> FilePath
 expandCommandPath (Just base) path = base </> path
