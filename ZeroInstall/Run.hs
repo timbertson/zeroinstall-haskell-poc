@@ -5,16 +5,18 @@ module Main where
 import System.Posix.Env (getEnv,setEnv)
 import System.Cmd (rawSystem)
 import Debug.Trace
-import System.FilePath (joinPath)
+import System.FilePath (joinPath, (</>), isAbsolute)
 import Control.Monad (liftM)
 import Control.Monad.Trans.Either
 import Control.Monad.Trans.Class
 import Control.Error (hush, liftEither, fmapL)
 import Data.List (intercalate, find)
-import Data.Maybe (maybeToList, catMaybes)
+import Data.Char (isAlpha)
+import Data.Maybe (maybeToList, catMaybes, fromJust)
 import qualified Data.Map as Map
 import Data.Map ((!))
 import ZeroInstall.Model
+import qualified ZeroInstall.Model as Model
 import ZeroInstall.Utils
 import ZeroInstall.Store (Store, getStores, lookupAny)
 import qualified ZeroInstall.Selections as Selections
@@ -30,7 +32,7 @@ defaultSep = ":" -- TODO: windows
 
 expandBindingVal :: EnvironmentValue -> String -> String
 expandBindingVal (EnvValue v) _ = v
-expandBindingVal (EnvInsert v) base = joinPath [base, v]
+expandBindingVal (EnvInsert v) base = base </> v
 
 applyBindingAlg :: BindingAlg -> String -> Maybe String -> Maybe String -> String
 applyBindingAlg (Replace) new _ _ = new
@@ -61,10 +63,52 @@ runSelections (Selections iface selectedCommand sels) = do
 	print command
 	return ()
 
+
+-- buildCommandLine :: (Monad m) => (String -> m (Maybe String)) -> [(Selection, Maybe FilePath)] -> Interface -> CommandName -> m [String]
+-- buildCommandLine getEnv selectionPathPairs interface command = build (getSelection interface) commandName where
+-- 	selectionPaths = selectionPathMap selectionPathPairs
+-- 	getSelection = (!) selectionPathPairs
+-- 	build selection commandName = runnerArgs ++ pathArgs ++ (commandArgs command) where
+-- 		runnerArgs = case (runner command) of
+-- 			Nothing -> []
+-- 			Just r -> (build (getSelection $ runnerInterface r) (defaultCommand $ runnerCommand r)) ++ (runnerArgs r)
+-- 		pathArgs = maybeToList $ commandPath command
+-- 		command = fromJust $ find ((== commandName) . Model.commandName) (commands selection)
+-- 
+-- expandEnvVars :: (Monad m) => (String -> m (Maybe String)) -> String -> String
+-- expandEnvVars getEnv template = do
+
+-- TODO: should be able to condense this...
+data Token = Literal String | EnvReference String deriving Show
+tokenize :: String -> [Token]
+tokenize s = catMaybes $ parse s where
+	parse [] = []
+	parse s = (if lit == "" then Nothing else Just (Literal lit)) : (parseRef (drop 1 postLit)) where
+		(lit, postLit) = break ((==) '$') s
+	parseRef [] = []
+	parseRef ('$': rest) = (Just $ Literal "$") : (parse rest)
+	parseRef ('{': s) = (Just $ EnvReference var) : (parse (drop 1 rest)) where
+		(var, rest) = break (== '}') s
+	parseRef s = (Just $ EnvReference var) : (parse rest) where
+		(var, rest) = break (not . isAlpha) s
+
+-- TODO:
+-- expandTokens :: (Monad m) => (String -> m (Maybe String)) -> m String
+expandTokens getEnv = concatMap toString where
+	toString (Literal s) = s
+	toString (EnvReference v) = maybe "" id (getEnv v)
+
+expandCommandPath :: Maybe FilePath -> FilePath -> FilePath
+expandCommandPath (Just base) path = base </> path
+expandCommandPath Nothing path = if (isAbsolute path) then path else error ("relative path with no base path: " ++ path)
+
+selectionPathMap :: [(Selection, Maybe FilePath)] -> Map.Map Interface (Maybe FilePath)
+selectionPathMap selectionPathPairs = Map.fromList $ map (\(sel, path) -> (interface sel, path)) selectionPathPairs
+
+
 correlateBindings :: [(Selection, Maybe FilePath)] -> [(Interface, Binding)] -> [(FilePath, Binding)]
 correlateBindings selectionPathPairs interfaceBindingPairs = catMaybes $ map resolveBinding interfaceBindingPairs where
-	selectionPaths :: Map.Map Interface (Maybe FilePath)
-	selectionPaths = Map.fromList $ map (\(sel, path) -> (interface sel, path)) selectionPathPairs
+	selectionPaths = selectionPathMap selectionPathPairs
 	resolveBinding (iface, binding) = case (selectionPaths ! iface) of
 		(Just path) -> Just (path, binding)
 		Nothing -> trace ("Discarding binding for " ++ iface ++ " - package or optional implementation?") Nothing

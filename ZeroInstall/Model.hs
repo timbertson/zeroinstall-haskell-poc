@@ -18,6 +18,7 @@ data Command = Command {
 	commandRequirements :: [Requirement],
 	commandName :: CommandName,
 	commandPath :: Maybe FilePath,
+	commandArgs :: [String],
 	runner :: Maybe Runner
 	} deriving Show
 
@@ -26,6 +27,8 @@ data Runner = Runner {
 	runnerArgs :: [String],
 	runnerCommand :: Maybe CommandName
 	} deriving Show
+
+defaultCommand = maybe "run"
 
 class HasBindings a where
 	bindings :: a -> [Binding]
