@@ -28,7 +28,7 @@ data Runner = Runner {
 	runnerCommand :: Maybe CommandName
 	} deriving Show
 
-defaultCommand = maybe "run"
+defaultCommand = maybe "run" id
 
 class HasBindings a where
 	bindings :: a -> [Binding]
@@ -85,6 +85,12 @@ formatDigest (Digest alg val) = intercalate sep [alg, val]
 		    | otherwise                                = "_"
 
 data Selections = Selections Interface CommandName [Selection]
+
+data LocatedSelection = LocatedSelection {
+	selection :: Selection,
+	location :: (Maybe FilePath)
+}
+
 type Selection = Implementation
 getCommand :: Selections -> CommandName
 getCommand (Selections _ c _) = c

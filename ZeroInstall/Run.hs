@@ -63,39 +63,52 @@ runSelections (Selections iface selectedCommand sels) = do
 	print command
 	return ()
 
+buildCommandLine :: forall m . (Monad m) => (String -> m (Maybe String)) -> [(Selection, Maybe FilePath)] -> Interface -> CommandName -> m [String]
+buildCommandLine getEnv selectionPathPairs interface commandName = build (getSelection interface) commandName where
+	-- TODO: use locatedSelection
+	selectionPaths = selectionPathMap selectionPathPairs
+	getSelection = (!) (Map.fromList $ map (\(sel, path) -> (Model.interface sel, sel)) selectionPathPairs)
+	getSelectionPath :: Interface -> Maybe FilePath
+	getSelectionPath = (!) selectionPaths
+	expand = mapM (expandEnvVars getEnv)
+	build :: Selection -> CommandName -> m [String]
+	build selection commandName = do
+		runnerArgs' :: [String] <- runnerArgs
+		commandArgs' :: [String] <- expand $ commandArgs command
+		return $ runnerArgs' ++ pathArgs ++ commandArgs'
+		where
+			runnerArgs :: m [String]
+			runnerArgs = case (runner command) of
+				Nothing -> return []
+				Just r -> do
+					commandArgs' <- build (getSelection $ runnerInterface r) (defaultCommand $ runnerCommand r)
+					runnerArgs' <- expand $ Model.runnerArgs r
+					return $ commandArgs' ++ runnerArgs'
 
--- buildCommandLine :: (Monad m) => (String -> m (Maybe String)) -> [(Selection, Maybe FilePath)] -> Interface -> CommandName -> m [String]
--- buildCommandLine getEnv selectionPathPairs interface command = build (getSelection interface) commandName where
--- 	selectionPaths = selectionPathMap selectionPathPairs
--- 	getSelection = (!) selectionPathPairs
--- 	build selection commandName = runnerArgs ++ pathArgs ++ (commandArgs command) where
--- 		runnerArgs = case (runner command) of
--- 			Nothing -> []
--- 			Just r -> (build (getSelection $ runnerInterface r) (defaultCommand $ runnerCommand r)) ++ (runnerArgs r)
--- 		pathArgs = maybeToList $ commandPath command
--- 		command = fromJust $ find ((== commandName) . Model.commandName) (commands selection)
--- 
--- expandEnvVars :: (Monad m) => (String -> m (Maybe String)) -> String -> String
--- expandEnvVars getEnv template = do
+			pathArgs :: [String]
+			pathArgs = map (expandCommandPath (getSelectionPath $ Model.interface selection)) $ maybeToList (commandPath command)
+			command = fromJust $ find ((== commandName) . Model.commandName) (commands selection)
 
--- TODO: should be able to condense this...
 data Token = Literal String | EnvReference String deriving Show
-tokenize :: String -> [Token]
-tokenize s = catMaybes $ parse s where
-	parse [] = []
-	parse s = (if lit == "" then Nothing else Just (Literal lit)) : (parseRef (drop 1 postLit)) where
-		(lit, postLit) = break ((==) '$') s
-	parseRef [] = []
-	parseRef ('$': rest) = (Just $ Literal "$") : (parse rest)
-	parseRef ('{': s) = (Just $ EnvReference var) : (parse (drop 1 rest)) where
-		(var, rest) = break (== '}') s
-	parseRef s = (Just $ EnvReference var) : (parse rest) where
-		(var, rest) = break (not . isAlpha) s
+expandEnvVars :: Monad m => (String -> m (Maybe String)) -> String -> m String
+expandEnvVars getEnv str = expandTokens getEnv (tokenize str) where
+	-- TODO: should be able to condense this...
+	tokenize :: String -> [Token]
+	tokenize s = catMaybes $ parse s where
+		parse [] = []
+		parse s = (if lit == "" then Nothing else Just (Literal lit)) : (parseRef (drop 1 postLit)) where
+			(lit, postLit) = break ((==) '$') s
+		parseRef [] = []
+		parseRef ('$': rest) = (Just $ Literal "$") : (parse rest)
+		parseRef ('{': s) = (Just $ EnvReference var) : (parse (drop 1 rest)) where
+			(var, rest) = break (== '}') s
+		parseRef s = (Just $ EnvReference var) : (parse rest) where
+			(var, rest) = break (not . isAlpha) s
 
-expandTokens :: (Monad m) => (String -> m (Maybe String)) -> [Token] -> m String
-expandTokens getEnv toks = liftM concat (mapM toString toks) where
-	toString (Literal s) = return s
-	toString (EnvReference v) = liftM (maybe "" id) (getEnv v)
+	expandTokens :: (Monad m) => (String -> m (Maybe String)) -> [Token] -> m String
+	expandTokens getEnv toks = liftM concat (mapM toString toks) where
+		toString (Literal s) = return s
+		toString (EnvReference v) = liftM (maybe "" id) (getEnv v)
 
 expandCommandPath :: Maybe FilePath -> FilePath -> FilePath
 expandCommandPath (Just base) path = base </> path
