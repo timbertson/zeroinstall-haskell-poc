@@ -142,12 +142,12 @@ getSelectionImpl e =
 		_ -> getZiImpl
 	where
 		getPackageImpl p = do
-			dists <- getAttr "distributions" e
+			let dists = maybe [] words (hush $ getAttr "distributions" e)
 			version <- versionText
 			return $ Package $ PackageImplementation {
 				packageName = p
 				,packageVersion = version
-				,distributions = words dists
+				,distributions = dists
 			}
 
 		versionText = getAttr "version" e

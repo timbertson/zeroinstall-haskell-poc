@@ -3,6 +3,8 @@
 module Main where
 
 import System.Posix.Env (getEnv,setEnv)
+import System.Posix.Process (executeFile)
+import System.Environment (getArgs)
 import System.Cmd (rawSystem)
 import Debug.Trace
 import System.FilePath (joinPath, (</>), isAbsolute)
@@ -44,24 +46,22 @@ applyBindingAlg (AddToExisting mode) new sep existing =
 		existingList = (maybeToList existing)
 		sep' = maybe defaultSep id sep
 
-runSelections :: Selections -> IO ()
-runSelections (Selections iface selectedCommand sels) = do
+runSelections :: Selections -> [String] -> IO ()
+runSelections (Selections iface selectedCommand sels) args = do
 	selection <-
 		requireJust ("cannot find interface " ++ iface ++ " in selections") $
 		find ((== iface) . interface) sels
-	-- print selection
-	-- print (commands selection)
-	-- print selectedCommand
 	command <-
 		requireJust ("cannot find \"" ++ selectedCommand ++ "\" command for interface " ++ iface) $
 		find ((== selectedCommand) . commandName) (commands selection)
-	-- putStrLn $ "num bundings: " ++ (show $ liftM (length . bindings) sels)
+
 	annotatedSelections :: [(Selection, Maybe FilePath)] <- runEitherT (annotateSelectionPaths sels) >>= requireRight
 	let allBindings = getAllBindings sels :: [(Interface, Binding)]
 	let applicableBindings = correlateBindings annotatedSelections allBindings :: [(FilePath, Binding)]
 	applyBindings applicableBindings
-	print command
-	return ()
+	commandLine <- buildCommandLine getEnv annotatedSelections iface selectedCommand
+	-- TODO: non-posix executeFile?
+	executeFile (head commandLine) False ((tail commandLine) ++ args) Nothing
 
 buildCommandLine :: forall m . (Monad m) => (String -> m (Maybe String)) -> [(Selection, Maybe FilePath)] -> Interface -> CommandName -> m [String]
 buildCommandLine getEnv selectionPathPairs interface commandName = build (getSelection interface) commandName where
@@ -131,7 +131,7 @@ applyBinding :: (FilePath, Binding) -> IO ()
 applyBinding (path, (Binding name (EnvironmentBinding alg value sep))) = do
 		existingVal <- getEnv name
 		let val = getNewValue existingVal
-		putStrLn ("setting $" ++ name ++ "=" ++ val)
+		-- putStrLn ("setting $" ++ name ++ "=" ++ val)
 		setEnv name val True
 	where
 		getNewValue :: Maybe String -> String
@@ -182,7 +182,8 @@ requireRight :: Either String a -> IO a
 requireRight e = either fail return e
 
 main = do
-	xml <- Selections.loadXml "sels.xml"
+	args <- getArgs
+	xml <- Selections.loadXml (head args)
 	let maybeSels = Selections.getSelections xml
 	sels <- either fail return maybeSels
-	runSelections sels
+	runSelections sels (tail args)
