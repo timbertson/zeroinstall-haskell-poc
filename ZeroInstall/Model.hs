@@ -91,6 +91,8 @@ data LocatedSelection = LocatedSelection {
 	location :: (Maybe FilePath)
 }
 
+instance HasInterface LocatedSelection where interface = interface . selection
+
 type Selection = Implementation
 getCommand :: Selections -> CommandName
 getCommand (Selections _ c _) = c

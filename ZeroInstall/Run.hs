@@ -9,6 +9,7 @@ import System.Cmd (rawSystem)
 import Debug.Trace
 import System.FilePath (joinPath, (</>), isAbsolute)
 import Control.Monad (liftM)
+import Control.Arrow ((&&&))
 import Control.Monad.Trans.Either
 import Control.Monad.Trans.Class
 import Control.Error (hush, liftEither, fmapL)
@@ -17,8 +18,7 @@ import Data.Char (isAlpha)
 import Data.Maybe (maybeToList, catMaybes, fromJust)
 import qualified Data.Map as Map
 import Data.Map ((!))
-import ZeroInstall.Model
-import qualified ZeroInstall.Model as Model
+import ZeroInstall.Model as Model
 import ZeroInstall.Utils
 import ZeroInstall.Store (Store, getStores, lookupAny)
 import qualified ZeroInstall.Selections as Selections
@@ -55,35 +55,36 @@ runSelections (Selections iface selectedCommand sels) args = do
 		requireJust ("cannot find \"" ++ selectedCommand ++ "\" command for interface " ++ iface) $
 		find ((== selectedCommand) . commandName) (commands selection)
 
-	annotatedSelections :: [(Selection, Maybe FilePath)] <- runEitherT (annotateSelectionPaths sels) >>= requireRight
+	locatedSelections :: [LocatedSelection] <- runEitherT (locateSelections sels) >>= requireRight
 	let allBindings = getAllBindings sels :: [(Interface, Binding)]
-	let applicableBindings = correlateBindings annotatedSelections allBindings :: [(FilePath, Binding)]
+	let applicableBindings = correlateBindings locatedSelections allBindings :: [(FilePath, Binding)]
 	applyBindings applicableBindings
-	commandLine <- buildCommandLine getEnv annotatedSelections iface selectedCommand
+	commandLine <- buildCommandLine getEnv locatedSelections iface selectedCommand
 	-- TODO: non-posix executeFile?
 	executeFile (head commandLine) False ((tail commandLine) ++ args) Nothing
 
-buildCommandLine :: forall m . (Monad m) => (String -> m (Maybe String)) -> [(Selection, Maybe FilePath)] -> Interface -> CommandName -> m [String]
-buildCommandLine getEnv selectionPathPairs interface commandName = build (getSelection interface) commandName where
-	-- TODO: use locatedSelection
-	selectionPaths = selectionPathMap selectionPathPairs
-	getSelection = (!) (Map.fromList $ map (\(sel, path) -> (Model.interface sel, sel)) selectionPathPairs)
-	getSelectionPath :: Interface -> Maybe FilePath
-	getSelectionPath = (!) selectionPaths
+mkMap :: Ord k => (a -> (k, v)) -> [a] -> Map.Map k v
+mkMap toPair elems = Map.fromList $ map toPair elems
+
+buildCommandLine :: forall m . (Monad m) =>
+	(String -> m (Maybe String)) -> [LocatedSelection] -> Interface -> CommandName -> m [String]
+buildCommandLine getEnv selections interface commandName = build (getSelection interface) commandName where
+	getSelection = (!) $ mkMap (Model.interface &&& Model.selection) selections
+	getSelectionPath = (!) $ selectionPathMap selections
 	expand = mapM (expandEnvVars getEnv)
 	build :: Selection -> CommandName -> m [String]
 	build selection commandName = do
-		runnerArgs' :: [String] <- runnerArgs
-		commandArgs' :: [String] <- expand $ commandArgs command
-		return $ runnerArgs' ++ pathArgs ++ commandArgs'
+		runnerArgs :: [String] <- getRunnerArgs
+		commandArgs :: [String] <- expand $ Model.commandArgs command
+		return $ runnerArgs ++ pathArgs ++ commandArgs
 		where
-			runnerArgs :: m [String]
-			runnerArgs = case (runner command) of
+			getRunnerArgs :: m [String]
+			getRunnerArgs = case (runner command) of
 				Nothing -> return []
 				Just r -> do
-					commandArgs' <- build (getSelection $ runnerInterface r) (defaultCommand $ runnerCommand r)
-					runnerArgs' <- expand $ Model.runnerArgs r
-					return $ commandArgs' ++ runnerArgs'
+					commandArgs <- build (getSelection $ runnerInterface r) (defaultCommand $ runnerCommand r)
+					runnerArgs <- expand $ Model.runnerArgs r
+					return $ commandArgs ++ runnerArgs
 
 			pathArgs :: [String]
 			pathArgs = map (expandCommandPath (getSelectionPath $ Model.interface selection)) $ maybeToList (commandPath command)
@@ -114,13 +115,13 @@ expandCommandPath :: Maybe FilePath -> FilePath -> FilePath
 expandCommandPath (Just base) path = base </> path
 expandCommandPath Nothing path = if (isAbsolute path) then path else error ("relative path with no base path: " ++ path)
 
-selectionPathMap :: [(Selection, Maybe FilePath)] -> Map.Map Interface (Maybe FilePath)
-selectionPathMap selectionPathPairs = Map.fromList $ map (\(sel, path) -> (interface sel, path)) selectionPathPairs
+selectionPathMap :: [LocatedSelection] -> Map.Map Interface (Maybe FilePath)
+selectionPathMap sels = mkMap ((interface . selection) &&& location) sels
 
 
-correlateBindings :: [(Selection, Maybe FilePath)] -> [(Interface, Binding)] -> [(FilePath, Binding)]
-correlateBindings selectionPathPairs interfaceBindingPairs = catMaybes $ map resolveBinding interfaceBindingPairs where
-	selectionPaths = selectionPathMap selectionPathPairs
+correlateBindings :: [LocatedSelection] -> [(Interface, Binding)] -> [(FilePath, Binding)]
+correlateBindings selections interfaceBindingPairs = catMaybes $ map resolveBinding interfaceBindingPairs where
+	selectionPaths = selectionPathMap selections
 	resolveBinding (iface, binding) = case (selectionPaths ! iface) of
 		(Just path) -> Just (path, binding)
 		Nothing -> trace ("Discarding binding for " ++ iface ++ " - package or optional implementation?") Nothing
@@ -156,24 +157,27 @@ getAllBindings sels = concat $ map selectionBindings sels  where
 	collectCommandBindings sel = concat $ map (\c -> assoc (interface sel) (bindings c)) (commands sel)
 	--TODO: do all commands appear in a sels document? or just the ones we have selected?
 
-
-annotateSelectionPaths :: [Selection] -> EitherT String IO [(Selection, Maybe FilePath)]
-annotateSelectionPaths sels = do
+locateSelections :: [Selection] -> EitherT String IO [LocatedSelection]
+locateSelections sels = do
 	stores <- lift getStores
-	paths <- lookupImpls stores sels
-	return $ sels `zip` paths
+	locateSelections' stores sels
 	where
-		lookupImpls :: [Store] -> [Selection] -> EitherT String IO [Maybe FilePath]
-		lookupImpls stores sels = mapM (EitherT . (lookupImpl stores)) sels
+		locateSelections' :: [Store] -> [Selection] -> EitherT String IO [LocatedSelection]
+		locateSelections' stores sels = mapM (EitherT . (resolveSelection stores)) sels
 
-		lookupImpl :: [Store] -> Selection -> IO (Either String (Maybe FilePath))
-		lookupImpl stores sel = liftM (prependErrorMessage ("Unable to resolve interface " ++ (interface sel) ++ ":\n"))
-			(lookupImpl' stores (implDetails sel))
+		resolveSelection :: [Store] -> Selection -> IO (Either String LocatedSelection)
+		resolveSelection stores sel = do
+			lookupResult <- liftM annotateError $ lookupImpl stores (implDetails sel)
+			let located = liftM mkLocatedSelection lookupResult
+			return located
+			where
+				mkLocatedSelection path = LocatedSelection { selection = sel, location = path }
+				annotateError = (prependErrorMessage ("Unable to resolve interface " ++ (interface sel) ++ ":\n"))
 
-		lookupImpl' :: [Store] -> ImplementationDetails -> IO (Either String (Maybe FilePath))
-		lookupImpl' stores (Local (LocalImplementation _ path))      = return $ Right $ Just path
-		lookupImpl' stores (Remote (RemoteImplementation _ digests)) = (liftM . liftM) Just $ lookupAny stores digests
-		lookupImpl' stores (Package _)                               = return (Right Nothing)
+		lookupImpl :: [Store] -> ImplementationDetails -> IO (Either String (Maybe FilePath))
+		lookupImpl stores (Local (LocalImplementation _ path))      = return $ Right $ Just path
+		lookupImpl stores (Remote (RemoteImplementation _ digests)) = (liftM . liftM) Just $ lookupAny stores digests
+		lookupImpl stores (Package _)                               = return (Right Nothing)
 
 requireJust :: String -> Maybe a -> IO a
 requireJust message m = maybe (fail message) return m
