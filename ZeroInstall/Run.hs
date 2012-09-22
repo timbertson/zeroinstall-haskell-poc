@@ -182,8 +182,8 @@ requireRight :: Either String a -> IO a
 requireRight e = either fail return e
 
 main = do
-	args <- getArgs
-	xml <- Selections.loadXml (head args)
+	selectionFile:args <- getArgs
+	xml <- Selections.loadXml selectionFile
 	let maybeSels = Selections.getSelections xml
 	sels <- either fail return maybeSels
-	runSelections sels (tail args)
+	runSelections sels args
