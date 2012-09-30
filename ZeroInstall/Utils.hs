@@ -2,6 +2,8 @@ module ZeroInstall.Utils where
 
 import Control.Monad (liftM)
 import Control.Error (headMay, partitionEithers, fmapL)
+import qualified Data.Map as Map
+import System.Directory (doesDirectoryExist)
 
 mapLeft :: (a1 -> a2) -> Either a1 b -> Either a2 b
 mapLeft f (Left a) = Left (f a)
@@ -28,3 +30,15 @@ prependErrorMessage m = fmapL (\err -> m ++ err)
 
 appendErrorMessage :: String -> Either String a -> Either String a
 appendErrorMessage m = fmapL (\err -> err ++ m)
+
+mkMap :: Ord k => (a -> (k, v)) -> [a] -> Map.Map k v
+mkMap toPair elems = Map.fromList $ map toPair elems
+
+requireRight :: Either String a -> IO a
+requireRight e = either fail return e
+
+
+existingDirectory :: FilePath -> IO (Maybe FilePath)
+existingDirectory p = doesDirectoryExist p >>=
+	\exists -> return $ if exists then Just p else Nothing
+

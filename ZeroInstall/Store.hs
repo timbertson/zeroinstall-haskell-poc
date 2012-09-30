@@ -8,6 +8,8 @@ import Data.Maybe (catMaybes)
 import Control.Monad (liftM)
 import Control.Error (headMay, note)
 import ZeroInstall.Model (Digest, formatDigest)
+import ZeroInstall.Utils
+import qualified ZeroInstall.Namespaces as NS
 
 data Store = Store FilePath
 
@@ -40,13 +42,9 @@ lookup stores digest = liftM firstDefined $ mapM (flip lookup' $ digest) stores 
 	lookup' :: Store -> Digest -> IO (Maybe FilePath)
 	lookup' (Store path) digest = existingDirectory (joinPath [path, (formatDigest digest)])
 
-existingDirectory :: FilePath -> IO (Maybe FilePath)
-existingDirectory p = doesDirectoryExist p >>=
-	\exists -> return $ if exists then Just p else Nothing
-
 userStoreDir = Basedir.getUserCacheDir cachePath
 
 systemStoreDirs = do
 	return $ [joinPath ["/var/cache", cachePath]]
 
-cachePath = joinPath ["0install.net", "implementations"]
+cachePath = joinPath [NS.configSite, "implementations"]

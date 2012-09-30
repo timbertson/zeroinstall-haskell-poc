@@ -1,6 +1,6 @@
 #!/usr/bin/env runghc
 {-# LANGUAGE ScopedTypeVariables #-}
-module Main where
+module ZeroInstall.Run where
 
 import System.Posix.Env (getEnv,setEnv)
 import System.Posix.Process (executeFile)
@@ -63,9 +63,6 @@ runSelections (Selections iface selectedCommand sels) args = do
 	-- TODO: non-posix executeFile?
 	executeFile (head commandLine) False ((tail commandLine) ++ args) Nothing
 
-mkMap :: Ord k => (a -> (k, v)) -> [a] -> Map.Map k v
-mkMap toPair elems = Map.fromList $ map toPair elems
-
 buildCommandLine :: forall m . (Monad m) =>
 	(String -> m (Maybe String)) -> [LocatedSelection] -> Interface -> CommandName -> m [String]
 buildCommandLine getEnv selections interface commandName = build (getSelection interface) commandName where
@@ -85,7 +82,6 @@ buildCommandLine getEnv selections interface commandName = build (getSelection i
 					commandArgs <- build (getSelection $ runnerInterface r) (defaultCommand $ runnerCommand r)
 					runnerArgs <- expand $ Model.runnerArgs r
 					return $ commandArgs ++ runnerArgs
-
 			pathArgs :: [String]
 			pathArgs = map (expandCommandPath (getSelectionPath $ Model.interface selection)) $ maybeToList (commandPath command)
 			command = fromJust $ find ((== commandName) . Model.commandName) (commands selection)
@@ -181,9 +177,6 @@ locateSelections sels = do
 
 requireJust :: String -> Maybe a -> IO a
 requireJust message m = maybe (fail message) return m
-
-requireRight :: Either String a -> IO a
-requireRight e = either fail return e
 
 main = do
 	selectionFile:args <- getArgs

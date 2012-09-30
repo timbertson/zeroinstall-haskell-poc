@@ -1,65 +1,65 @@
-module main where
+{-# LANGUAGE ScopedTypeVariables #-}
+module ZeroInstall.App where
+
+import System.FilePath
+import qualified System.Environment.XDG.BaseDir as Basedir
+import qualified ZeroInstall.Namespaces as NS
+import Control.Error
+import Text.Regex (matchRegex, mkRegex)
+import qualified ZeroInstall.Model as Model
+import qualified ZeroInstall.Selections as Selections
+import ZeroInstall.Run (runSelections)
+import Control.Monad.Trans (lift)
+import Control.Monad.Trans.Either (EitherT)
+import System.Directory (doesDirectoryExist)
 
 data App = App {
 	config :: Config
 	,path :: FilePath
-	,lastChecked :: DateTime
-	}
-		deriving Show
+	-- ,lastChecked :: DateTime
+	} deriving Show
+
+data Config = Config {} deriving Show
+
+todo = error "TODO"
 
 updateLastChecked :: App -> IO ()
+updateLastChecked _ = todo
 
-setSelections :: App -> Selections -> App
+setSelections :: App -> Model.Selections -> App
+setSelections _ _ = todo
 
 destroy :: App -> IO ()
+destroy _ = todo
 
 getName :: App -> String
+getName _ = todo
 
--- util
-getRight Left _ = Nothing
-getRight Right v = Just v
+validName str = isJust $ matchRegex (mkRegex "^[^./\\:=;'\"][^/\\:=;'\"]*$") str
 
-validName str = matchRegex (mkRegex "^[^./\\:=;'\"][^/\\:=;'\"]*$")
+validateName :: String -> Either String String
+validateName name = if (validName name) then (Right name) else (Left ("Invalid application name " ++ name))
 
-validateName :: Monad a => Name -> a ()
-validateName name = unless (validName name) $ fail ("Invalid application name " ++ name)
+lookupApp :: Config -> String -> IO (Either String App)
+lookupApp config name = runEitherT $ do
+	name <- liftEither $ validateName name
+	possibleDirs <- lift $ (Basedir.getAllConfigDirs (joinPath [NS.configSite, "apps", name]))
+	maybeDir <- lift $ headFilterM doesDirectoryExist possibleDirs
+	appDir <- liftEither $ note ("No such application " ++ name) maybeDir
+	return $ App {
+		config = config
+		,path = appDir
+		-- ,lastChecked = startOfTime
+	}
 
+headFilterM :: Monad m => (a -> m Bool) -> [a] -> m (Maybe a)
+headFilterM predicate [] = return Nothing
+headFilterM predicate (x:xs) = predicate x >>= \ok -> if ok then return (Just x) else headFilterM predicate xs
 
--- createApp :: Config -> Name -> Requirements -> IO App
--- createApp config name reqs = do
--- 	validateName name
-
-tryLookupApp :: Config -> Name -> IO (Maybe App)
-tryLookupApp = getRight lookupApp'
-
-lookupApp :: Config -> Name -> IO App
-lookupApp config name =
-	case lookupApp' config name of
-		Left err -> throw (SafeException err)
-		Right app -> app
-
-lookupApp' :: Config -> Name -> IO (Either String App)
-lookupApp' config name = do
-	{-
-		Get the App for name.
-		Returns None if name is not an application (doesn't exist or is not a valid name).
-		Since / and : are not valid name characters, it is generally safe to try this
-		before calling L{injector.model.canonical_iface_uri}.
-	-}
-	if (! validateName name)
-		then
-			return Left ("Invalid application name " ++ name)
-		else
-			loadApp $ loadFirstConfig [Namespaces.configSite, "apps", name]
-	where
-		loadApp None = Left ("No such application " ++ name)
-		loadApp path = Right $ App {
-			config = config
-			,path = path
-			,lastChecked = startOfTime
-		}
-
-
-
-
-validateName :: String -> Bool
+runApp :: App -> [String] -> IO ()
+runApp app args = do
+	let selectionFile = (path app) </> "selections.xml"
+	xml <- Selections.loadXml selectionFile
+	let maybeSels = Selections.getSelections xml
+	sels <- either fail return maybeSels
+	runSelections sels args
