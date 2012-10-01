@@ -1,0 +1,42 @@
+name: zeroinstall
+version: 0.1
+cabal-version: >= 1.8
+build-type: Simple
+
+library
+  build-depends: base
+  exposed-modules:
+    ZeroInstall.Command.Run
+    , ZeroInstall.App
+    , ZeroInstall.Model
+    , ZeroInstall.Namespaces
+    , ZeroInstall.Run
+    , ZeroInstall.Selections
+    , ZeroInstall.Store
+    , ZeroInstall.Utils
+  hs-source-dirs: src
+  build-depends:
+    optparse-applicative
+    , directory
+    , either
+    , base >= 4
+    , mtl >= 2
+    , errors
+    , xml
+    , containers
+    , text
+    , filepath
+    , xdg-basedir
+    , transformers
+    , process
+    , unix
+    , regex-compat
+
+executable 0install-run
+  main-is: Main.hs
+  hs-source-dirs: scripts/run
+  build-depends:
+    zeroinstall
+    , base >= 4
+
+
