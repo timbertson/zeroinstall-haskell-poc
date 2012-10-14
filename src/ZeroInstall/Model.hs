@@ -170,4 +170,3 @@ parseImportance :: String -> Either String Importance
 parseImportance "required"    = Right Required
 parseImportance "recommended" = Right Recommended
 parseImportance x             = Left $ "Unknown importance: " ++ x
-
