@@ -1,6 +1,9 @@
 .PHONY: phony
-build: phony
+rainbow-build: phony
 	rainbow --conf ghc -- cabal build
+
+build: phony
+	cabal build
 
 configure: phony
 	cabal configure

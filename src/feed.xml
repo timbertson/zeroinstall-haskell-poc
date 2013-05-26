@@ -1,0 +1,25 @@
+<?xml version="1.0" ?>
+<?xml-stylesheet type='text/xsl' href='interface.xsl'?>
+<interface uri="http://gfxmonk.net/dist/0install/hai.xml" xmlns="http://zero-install.sourceforge.net/2004/injector/interface" xmlns:compile="http://zero-install.sourceforge.net/2006/namespaces/0compile" xmlns:gfxmonk="http://gfxmonk.net/dist/0install">
+	<name>hai</name>
+	<summary>Home Arch Install - install packages without root account</summary>
+	<gfxmonk:upstream id="Barthalion/hai" type="github"/>
+	<gfxmonk:publish>third-party</gfxmonk:publish>
+	<homepage>https://github.com/Barthalion/hai</homepage>
+	<description>Home Arch Install - install packages without root account</description>
+	<group>
+		<command name="run" path="hai"/>
+		<requires interface="http://gfxmonk.net/dist/0install/bsdtar.xml"/>
+		<requires interface="http://gfxmonk.net/dist/0install/funionfs.xml"/>
+		<requires interface="http://gfxmonk.net/dist/0install/fakechroot.xml"/>
+		<implementation id="sha1new=c6d565efef91f1b66d70818158bfeef968a6b865" released="2012-06-19" version="1.1">
+			<archive extract="Barthalion-hai-30bb0c9" href="https://github.com/Barthalion/hai/tarball/1.1" size="11386" type="application/x-compressed-tar"/>
+			<manifest-digest sha256="fc43e3f9a381e2dc6d7768cb1abfc8ea141d73ecf2c20fc72bf00bc6d603981e"/>
+		</implementation>
+	</group>
+</interface>
+<!-- Base64 Signature
+iEYEABECAAYFAlBemcwACgkQ/lhgK1iJTtIgvQCghxGz6sc9v9Tg8nTZDJfy+jjf/2kAoLd1Ysib
+YluEfu08hvx2DiIO/vhk
+
+-->
